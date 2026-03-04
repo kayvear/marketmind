@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+
+# Environment files (never commit — contain secrets)
+.env
+.env.*
+!.env.example
+
+# uv
+.python-version
+uv.lock
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.local
+
+# OS
+.DS_Store
+Thumbs.db
