@@ -22,3 +22,11 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+
+# Internal project docs — not for the repo
+# Replace with a proper README.md instead
+plan.md
+progress.md
+
+# Claude Code internal config
+.claude/
