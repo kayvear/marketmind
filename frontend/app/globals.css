@@ -1,26 +1,87 @@
 @import "tailwindcss";
 
+/*
+ * Tell Tailwind v4 to activate `dark:` utility classes when an ancestor
+ * element has the class "dark" (set by next-themes on <html>).
+ * Without this, Tailwind v4 defaults to the prefers-color-scheme media query,
+ * which would ignore next-themes' class toggling.
+ */
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------------------
+ * Design tokens — all colours are defined here as CSS custom properties.
+ * Components use these variables so that swapping the theme is just a
+ * matter of changing which set of values is active.
+ * --------------------------------------------------------------------------- */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Backgrounds */
+  --bg-base:       #f4f4f5;   /* page background */
+  --bg-surface:    #ffffff;   /* cards, panels */
+  --bg-sidebar:    #ffffff;   /* sidebar */
+  --bg-hover:      #f1f1f3;   /* nav link hover */
+  --bg-active:     #e4e4e7;   /* nav link active */
+  --bg-input:      #ffffff;   /* text inputs */
+  --bg-chat-user:  #2563eb;   /* user chat bubble */
+  --bg-chat-ai:    #f1f5f9;   /* assistant chat bubble */
+
+  /* Text */
+  --text-primary:   #09090b;
+  --text-secondary: #71717a;
+  --text-muted:     #a1a1aa;
+  --text-chat-user: #ffffff;
+  --text-chat-ai:   #09090b;
+
+  /* Borders */
+  --border:         #e4e4e7;
+
+  /* Accent colours (shared across themes) */
+  --green:  #16a34a;
+  --red:    #dc2626;
+  --blue:   #2563eb;
+
+  /* Chart */
+  --chart-line:    #2563eb;
+  --chart-fill:    rgba(37, 99, 235, 0.1);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark {
+  /* Backgrounds */
+  --bg-base:       #09090b;
+  --bg-surface:    #18181b;
+  --bg-sidebar:    #0f0f11;
+  --bg-hover:      #27272a;
+  --bg-active:     #3f3f46;
+  --bg-input:      #27272a;
+  --bg-chat-user:  #2563eb;
+  --bg-chat-ai:    #27272a;
+
+  /* Text */
+  --text-primary:   #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted:     #71717a;
+  --text-chat-user: #ffffff;
+  --text-chat-ai:   #fafafa;
+
+  /* Borders */
+  --border:         #27272a;
+
+  /* Accents stay the same */
+  --green:  #4ade80;
+  --red:    #f87171;
+  --blue:   #60a5fa;
+
+  /* Chart */
+  --chart-line:    #60a5fa;
+  --chart-fill:    rgba(96, 165, 250, 0.1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* ---------------------------------------------------------------------------
+ * Base styles
+ * --------------------------------------------------------------------------- */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
