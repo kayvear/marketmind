@@ -1,57 +1,189 @@
+"use client";
+
 /**
  * Dashboard page — /dashboard
  *
- * Shows three market index cards + a price history chart.
- * All data is static/hardcoded this phase — Phase 6 replaces it with
- * live calls to the FastAPI backend.
+ * Phase 6A: live data from FastAPI backend.
  *
- * Server Component: no client state or browser APIs needed here.
- * The child components (MarketCard, PriceChart) handle their own needs.
+ * Data flow:
+ *   GET /api/market/overview        → three MarketCard components
+ *   GET /api/market/history/{sym}   → PriceChart (area chart)
+ *
+ * UX:
+ *   - Skeleton placeholders while fetching
+ *   - Inline error banner if the backend is unreachable
+ *   - Symbol input lets the user switch the chart to any ticker
  */
 
+import { useEffect, useState, useCallback } from "react";
 import MarketCard from "@/components/MarketCard";
 import PriceChart from "@/components/PriceChart";
 
-// ---------------------------------------------------------------------------
-// Static market index data
-// Mixed positive/negative so we can see both green and red in the UI.
-// ---------------------------------------------------------------------------
-const MARKET_INDICES = [
-  { name: "S&P 500",   symbol: "^GSPC", price: 5789.15,  change: 28.47,   changePercent: 0.49  },
-  { name: "NASDAQ",    symbol: "^IXIC", price: 18342.67, change: 156.23,  changePercent: 0.86  },
-  { name: "Dow Jones", symbol: "^DJI",  price: 42156.34, change: -89.12,  changePercent: -0.21 },
-];
+const API_BASE = "http://localhost:8000";
 
-// ---------------------------------------------------------------------------
-// Static AAPL price history — 22 trading days (roughly 1 month)
-// Prices loosely based on a realistic range to make the chart look natural.
-// ---------------------------------------------------------------------------
-const CHART_DATA = [
-  { date: "Feb 3",  close: 227.53 },
-  { date: "Feb 4",  close: 232.87 },
-  { date: "Feb 5",  close: 229.14 },
-  { date: "Feb 6",  close: 231.60 },
-  { date: "Feb 7",  close: 235.00 },
-  { date: "Feb 10", close: 233.42 },
-  { date: "Feb 11", close: 228.76 },
-  { date: "Feb 12", close: 226.50 },
-  { date: "Feb 13", close: 230.21 },
-  { date: "Feb 14", close: 236.87 },
-  { date: "Feb 18", close: 239.55 },
-  { date: "Feb 19", close: 244.60 },
-  { date: "Feb 20", close: 241.83 },
-  { date: "Feb 21", close: 238.10 },
-  { date: "Feb 24", close: 242.30 },
-  { date: "Feb 25", close: 247.96 },
-  { date: "Feb 26", close: 244.01 },
-  { date: "Feb 27", close: 239.75 },
-  { date: "Feb 28", close: 236.30 },
-  { date: "Mar 3",  close: 241.50 },
-  { date: "Mar 4",  close: 244.72 },
-  { date: "Mar 5",  close: 247.18 },
-];
+// ─── Period options ───────────────────────────────────────────────────────────
+
+const PERIODS = [
+  { label: "1W", value: "5d"  },
+  { label: "1M", value: "1mo" },
+  { label: "3M", value: "3mo" },
+  { label: "6M", value: "6mo" },
+  { label: "1Y", value: "1y"  },
+] as const;
+
+type PeriodValue = typeof PERIODS[number]["value"];
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+interface IndexData {
+  name: string;
+  symbol: string;
+  price: number;
+  change: number;
+  changePercent: number;
+}
+
+interface PricePoint {
+  date: string;
+  close: number;
+}
+
+// ─── Skeleton components ─────────────────────────────────────────────────────
+
+function CardSkeleton() {
+  return (
+    <div
+      className="rounded-xl p-4 border animate-pulse"
+      style={{ backgroundColor: "var(--bg-surface)", borderColor: "var(--border)" }}
+    >
+      <div className="h-3 w-20 rounded mb-3" style={{ backgroundColor: "var(--bg-active)" }} />
+      <div className="h-6 w-28 rounded mb-2" style={{ backgroundColor: "var(--bg-active)" }} />
+      <div className="h-3 w-16 rounded" style={{ backgroundColor: "var(--bg-hover)" }} />
+    </div>
+  );
+}
+
+function ChartSkeleton() {
+  return (
+    <div
+      className="rounded-xl border p-5 animate-pulse"
+      style={{ backgroundColor: "var(--bg-surface)", borderColor: "var(--border)" }}
+    >
+      <div className="h-4 w-32 rounded mb-4" style={{ backgroundColor: "var(--bg-active)" }} />
+      <div className="h-56 rounded" style={{ backgroundColor: "var(--bg-hover)" }} />
+    </div>
+  );
+}
+
+// ─── Error banner ─────────────────────────────────────────────────────────────
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div
+      className="rounded-xl px-4 py-3 text-sm border mb-6"
+      style={{
+        backgroundColor: "rgba(220, 38, 38, 0.08)",
+        borderColor: "var(--red)",
+        color: "var(--red)",
+      }}
+    >
+      ⚠ {message}
+    </div>
+  );
+}
+
+// ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  const [overview, setOverview] = useState<IndexData[] | null>(null);
+  const [chartData, setChartData] = useState<PricePoint[] | null>(null);
+  const [symbol, setSymbol] = useState("AAPL");
+  const [inputSymbol, setInputSymbol] = useState("AAPL");
+  const [period, setPeriod] = useState<PeriodValue>("1mo");
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [chartError, setChartError] = useState<string | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [chartLoading, setChartLoading] = useState(true);
+
+  // Fetch market overview on mount
+  useEffect(() => {
+    setOverviewLoading(true);
+    setOverviewError(null);
+    fetch(`${API_BASE}/api/market/overview`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Server returned ${r.status}`);
+        return r.json();
+      })
+      .then((raw: Record<string, { symbol: string; price: number; change: number; change_percent: number }>) => {
+        // Backend returns { "S&P 500": { symbol, price, change, change_percent }, ... }
+        // Transform to the array format MarketCard expects
+        const normalized: IndexData[] = Object.entries(raw).map(([name, v]) => ({
+          name,
+          symbol: v.symbol,
+          price: v.price,
+          change: v.change,
+          changePercent: v.change_percent,
+        }));
+        setOverview(normalized);
+        setOverviewLoading(false);
+      })
+      .catch((err) => {
+        setOverviewError(`Could not load market overview — ${err.message}. Is the backend running on port 8000?`);
+        setOverviewLoading(false);
+      });
+  }, []);
+
+  // Fetch price history whenever symbol or period changes
+  const fetchHistory = useCallback((sym: string, per: PeriodValue) => {
+    setChartLoading(true);
+    setChartError(null);
+    fetch(`${API_BASE}/api/market/history/${encodeURIComponent(sym)}?period=${per}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Server returned ${r.status}`);
+        return r.json();
+      })
+      .then((data: { date: string; close: number }[]) => {
+        if (!Array.isArray(data) || data.length === 0) {
+          throw new Error(`No price data found for "${sym}"`);
+        }
+        // Backend returns ISO dates like "2026-02-09".
+        // For 1Y, include the year ("Feb 9 '25"); otherwise just "Feb 9".
+        const showYear = per === "1y";
+        const formatted = data.map((d) => {
+          const [year, month, day] = d.date.split("-").map(Number);
+          const dt = new Date(year, month - 1, day);
+          const label = showYear
+            ? dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" })
+            : dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+          return { date: label, close: d.close };
+        });
+        setChartData(formatted);
+        setChartLoading(false);
+      })
+      .catch((err) => {
+        setChartError(err.message);
+        setChartLoading(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    fetchHistory(symbol, period);
+  }, [symbol, period, fetchHistory]);
+
+  // Handle symbol form submit
+  function handleSymbolSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = inputSymbol.trim().toUpperCase();
+    if (!trimmed) return;
+    if (trimmed === symbol) {
+      // Same ticker — force a refresh anyway
+      fetchHistory(trimmed, period);
+    } else {
+      setSymbol(trimmed);
+      setInputSymbol(trimmed);
+    }
+  }
+
   return (
     <div className="p-6 max-w-5xl mx-auto">
       {/* Page header */}
@@ -60,19 +192,95 @@ export default function DashboardPage() {
           Market Overview
         </h1>
         <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
-          US equity indices · Today
+          US equity indices · Live
         </p>
       </div>
 
-      {/* Market index cards — 3-column grid */}
+      {/* Overview error */}
+      {overviewError && <ErrorBanner message={overviewError} />}
+
+      {/* Market index cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        {MARKET_INDICES.map((idx) => (
-          <MarketCard key={idx.symbol} {...idx} />
-        ))}
+        {overviewLoading
+          ? [1, 2, 3].map((n) => <CardSkeleton key={n} />)
+          : overview?.map((idx) => <MarketCard key={idx.symbol} {...idx} />)}
       </div>
 
+      {/* Symbol selector + period pills */}
+      <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
+        {/* Left: ticker input */}
+        <form onSubmit={handleSymbolSubmit} className="flex items-center gap-2">
+          <label className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
+            Symbol
+          </label>
+          <input
+            type="text"
+            value={inputSymbol}
+            onChange={(e) => setInputSymbol(e.target.value.toUpperCase())}
+            placeholder="e.g. MSFT"
+            className="rounded-lg px-3 py-1.5 text-sm border outline-none w-28"
+            style={{
+              backgroundColor: "var(--bg-input)",
+              borderColor: "var(--border)",
+              color: "var(--text-primary)",
+            }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--blue)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
+          />
+          <button
+            type="submit"
+            className="px-3 py-1.5 rounded-lg text-sm font-medium text-white"
+            style={{ backgroundColor: "var(--blue)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+          >
+            Load
+          </button>
+        </form>
+
+        {/* Right: period pills */}
+        <div className="flex items-center gap-1">
+          {PERIODS.map((p) => {
+            const isActive = period === p.value;
+            return (
+              <button
+                key={p.value}
+                onClick={() => setPeriod(p.value)}
+                className="px-3 py-1 rounded-md text-xs font-medium transition-colors"
+                style={{
+                  backgroundColor: isActive ? "var(--bg-active)" : "transparent",
+                  color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+                  border: `1px solid ${isActive ? "var(--border)" : "transparent"}`,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    (e.currentTarget as HTMLElement).style.backgroundColor = "var(--bg-hover)";
+                    (e.currentTarget as HTMLElement).style.color = "var(--text-primary)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
+                    (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
+                  }
+                }}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Chart error */}
+      {chartError && <ErrorBanner message={chartError} />}
+
       {/* Price chart */}
-      <PriceChart data={CHART_DATA} symbol="AAPL" />
+      {chartLoading ? (
+        <ChartSkeleton />
+      ) : (
+        chartData && <PriceChart data={chartData} symbol={symbol} />
+      )}
     </div>
   );
 }
