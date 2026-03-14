@@ -172,8 +172,33 @@ async def market_history(symbol: str, period: str = "1mo"):
 #   everything at once. StreamingResponse consumes our async generator
 #   and forwards each yielded chunk to the client immediately.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Verbosity → system prompt mapping
+# Phase 7 will expose a toggle in the ChatPanel settings popover.
+# The backend already accepts the parameter so Phase 7 is frontend-only.
+# ---------------------------------------------------------------------------
+SYSTEM_PROMPTS = {
+    "brief": (
+        "You are a concise financial assistant. Answer in 1–3 short sentences or a "
+        "tight bullet list. Omit caveats and filler phrases."
+    ),
+    "normal": (
+        "You are a helpful financial assistant. Give clear, accurate answers with "
+        "enough context to be useful. Use bullet points for lists of data."
+    ),
+    "detailed": (
+        "You are a thorough financial analyst assistant. Provide comprehensive "
+        "answers with context, trends, and relevant caveats. Use headers to "
+        "structure longer responses."
+    ),
+}
+
+
 class ChatRequest(BaseModel):
     message: str
+    history: list[dict] = []         # prior turns: [{"role": "user"|"assistant", "content": str}, ...]
+    verbosity: str = "normal"        # "brief" | "normal" | "detailed"
+    model: str = "claude-opus-4-6"   # any valid Claude model slug
 
 
 @app.post("/api/chat")
@@ -194,8 +219,12 @@ async def chat(request: ChatRequest):
                 for t in tools_result.tools
             ]
 
+            system_prompt = SYSTEM_PROMPTS.get(request.verbosity, SYSTEM_PROMPTS["normal"])
             client = anthropic.AsyncAnthropic()
-            messages = [{"role": "user", "content": request.message}]
+            messages = [
+                *request.history,
+                {"role": "user", "content": request.message},
+            ]
 
             # --- Agentic loop ---
             # Identical logic to agent.py, but uses client.messages.stream()
@@ -204,8 +233,9 @@ async def chat(request: ChatRequest):
                 final_message = None
 
                 async with client.messages.stream(
-                    model="claude-opus-4-6",
+                    model=request.model,
                     max_tokens=4096,
+                    system=system_prompt,
                     tools=tools,
                     messages=messages,
                 ) as stream:

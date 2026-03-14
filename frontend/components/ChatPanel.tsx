@@ -1,24 +1,30 @@
 "use client";
 
 /**
- * ChatPanel.tsx
+ * ChatPanel.tsx — Phase 6B
  *
- * Two display modes:
+ * Two display modes (unchanged from Phase 5):
+ *   1. ACCORDION — 75%-wide panel docked to the bottom, slides open/closed.
+ *   2. MODAL     — centered overlay with backdrop blur.
  *
- *  1. ACCORDION (default)
- *     A 75%-wide panel centered at the bottom of the screen.
- *     The header bar is always visible; clicking it slides the chat area
- *     open or closed. A pop-out button in the header switches to Modal mode.
+ * Phase 6B additions:
+ *   - Live SSE streaming from POST /api/chat
+ *   - Conversation stored in useState (cleared on page refresh)
+ *   - InputBar is now interactive (controlled input + Enter / send button)
+ *   - "Thinking" dots while the first token hasn't arrived yet
+ *   - Error bubble if the backend is unreachable
  *
- *  2. MODAL
- *     A centered overlay that covers the page with a dark backdrop.
- *     Useful when the user wants more chat space without scrolling the page.
- *     Closed via the × button or by clicking outside the modal.
- *
- * Phase 6: replace STATIC_MESSAGES with useState + live SSE streaming.
+ * Phase 7 will add a gear ⚙ settings popover in the header for:
+ *   - Verbosity toggle  (Brief / Normal / Detailed)
+ *   - Model selector    (Opus / Sonnet / Haiku)
+ * The backend already accepts these as optional fields in the request body.
  */
 
 import { useRef, useEffect, useState } from "react";
+
+const API_BASE = "http://localhost:8000";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type Role = "user" | "assistant";
 interface Message {
@@ -27,32 +33,9 @@ interface Message {
   content: string;
 }
 
-const STATIC_MESSAGES: Message[] = [
-  {
-    id: 1,
-    role: "user",
-    content: "What is Apple's current stock price and how has it been trending?",
-  },
-  {
-    id: 2,
-    role: "assistant",
-    content:
-      "Apple Inc. (AAPL) is currently trading at **$247.18**, up **$2.46 (+1.00%)** today.\n\nOver the past month, AAPL has risen ~8.6% from ~$227. Brief dip in mid-February before recovering strongly in the final week.\n\nWould you like the detailed price chart, or a comparison with another stock?",
-  },
-  {
-    id: 3,
-    role: "user",
-    content: "How is the broader market doing today?",
-  },
-  {
-    id: 4,
-    role: "assistant",
-    content:
-      "US markets are mostly positive today:\n\n• **S&P 500** — 5,789.15 · +28.47 (+0.49%)\n• **NASDAQ** — 18,342.67 · +156.23 (+0.86%)\n• **Dow Jones** — 42,156.34 · -89.12 (-0.21%)\n\nTech is leading gains. The Dow is slightly negative, dragged by industrials.",
-  },
-];
+// ─── Text renderer ────────────────────────────────────────────────────────────
+// Handles **bold** and newlines. Full markdown via react-markdown in a later phase.
 
-// Renders **bold** and line breaks — full markdown via react-markdown in Phase 6
 function formatContent(text: string) {
   return text.split("\n").map((line, i, arr) => (
     <span key={i}>
@@ -64,7 +47,15 @@ function formatContent(text: string) {
   ));
 }
 
-function MessageBubble({ message }: { message: Message }) {
+// ─── Message bubble ───────────────────────────────────────────────────────────
+
+function MessageBubble({
+  message,
+  isThinking,
+}: {
+  message: Message;
+  isThinking?: boolean;
+}) {
   const isUser = message.role === "user";
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -76,14 +67,38 @@ function MessageBubble({ message }: { message: Message }) {
           borderRadius: isUser ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
         }}
       >
-        {formatContent(message.content)}
+        {isThinking ? (
+          // Animated "thinking" dots while waiting for the first token
+          <span className="flex gap-1 items-center py-0.5">
+            {[0, 150, 300].map((delay) => (
+              <span
+                key={delay}
+                className="w-1.5 h-1.5 rounded-full animate-bounce"
+                style={{
+                  backgroundColor: "var(--text-muted)",
+                  animationDelay: `${delay}ms`,
+                }}
+              />
+            ))}
+          </span>
+        ) : (
+          formatContent(message.content)
+        )}
       </div>
     </div>
   );
 }
 
-// Reusable input bar — used in both accordion and modal
-function InputBar() {
+// ─── Input bar ────────────────────────────────────────────────────────────────
+
+interface InputBarProps {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  disabled: boolean;
+}
+
+function InputBar({ value, onChange, onSubmit, disabled }: InputBarProps) {
   return (
     <div
       className="px-4 py-3 border-t shrink-0 flex items-center gap-2"
@@ -91,21 +106,42 @@ function InputBar() {
     >
       <input
         type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            onSubmit();
+          }
+        }}
         placeholder="Ask about a stock, index, or market trend…"
-        disabled
+        disabled={disabled}
         className="flex-1 rounded-xl px-4 py-2 text-sm outline-none border"
         style={{
           backgroundColor: "var(--bg-input)",
           borderColor: "var(--border)",
           color: "var(--text-primary)",
+          opacity: disabled ? 0.6 : 1,
         }}
+        onFocus={(e) => (e.currentTarget.style.borderColor = "var(--blue)")}
+        onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
       />
       <button
-        disabled
-        className="flex items-center justify-center w-9 h-9 rounded-xl text-white shrink-0 opacity-50 cursor-not-allowed"
-        style={{ backgroundColor: "var(--blue)" }}
+        onClick={onSubmit}
+        disabled={disabled || !value.trim()}
+        className="flex items-center justify-center w-9 h-9 rounded-xl text-white shrink-0"
+        style={{
+          backgroundColor: "var(--blue)",
+          opacity: disabled || !value.trim() ? 0.4 : 1,
+          cursor: disabled || !value.trim() ? "not-allowed" : "pointer",
+          transition: "opacity 0.15s ease",
+        }}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="14" height="14" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <line x1="22" y1="2" x2="11" y2="13" />
           <polygon points="22 2 15 22 11 13 2 9 22 2" />
         </svg>
@@ -114,36 +150,177 @@ function InputBar() {
   );
 }
 
-const ACCORDION_HEIGHT = 380; // px — height of the expanded accordion body
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const ACCORDION_HEIGHT = 380;
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ChatPanel() {
-  const [isOpen, setIsOpen]   = useState(false);
-  const [isModal, setIsModal] = useState(false);
-  const bottomRef             = useRef<HTMLDivElement>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput]       = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [isOpen, setIsOpen]     = useState(false);
+  const [isModal, setIsModal]   = useState(false);
+  const bottomRef               = useRef<HTMLDivElement>(null);
 
-  // Scroll to latest message when accordion opens or modal mounts
+  // Scroll to bottom when the panel opens or switches to modal
   useEffect(() => {
     if (isOpen || isModal) {
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 320);
     }
   }, [isOpen, isModal]);
 
-  // Close modal on Escape key
+  // Auto-scroll as tokens stream in
+  useEffect(() => {
+    if ((isOpen || isModal) && messages.length > 0) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, isOpen, isModal]);
+
+  // Close modal on Escape
   useEffect(() => {
     if (!isModal) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setIsModal(false); };
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsModal(false);
+    };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [isModal]);
 
-  // ─── MODAL MODE ────────────────────────────────────────────────────────────
+  // ─── Send message + SSE stream ────────────────────────────────────────────
+
+  async function sendMessage() {
+    const text = input.trim();
+    if (!text || isStreaming) return;
+
+    // Snapshot history BEFORE adding the new user message
+    const history = messages.map(({ role, content }) => ({ role, content }));
+
+    // Show user bubble immediately; add empty assistant bubble as placeholder
+    const userMsg: Message = { id: Date.now(),     role: "user",      content: text };
+    const aiMsg:   Message = { id: Date.now() + 1, role: "assistant", content: "" };
+    setMessages((prev) => [...prev, userMsg, aiMsg]);
+    setInput("");
+    setIsStreaming(true);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, history }),
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`Server returned ${response.status}`);
+      }
+
+      const reader  = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let isDone = false;
+
+      // Read the SSE stream chunk by chunk.
+      // Each SSE event ends with \n\n. Chunks from the network may contain
+      // several complete events, or split an event across multiple reads,
+      // so we buffer and split on \n\n to get clean event blocks.
+      while (!isDone) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? ""; // last slice may be an incomplete event
+
+        for (const part of parts) {
+          if (!part.trim()) continue;
+
+          let eventType = "message";
+          let eventData = "";
+          for (const line of part.split("\n")) {
+            if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+            else if (line.startsWith("data: "))  eventData = line.slice(6);
+          }
+
+          if (eventType === "done") { isDone = true; break; }
+
+          if (eventData) {
+            try {
+              const token: string = JSON.parse(eventData);
+              setMessages((prev) => {
+                const updated = [...prev];
+                const last    = updated[updated.length - 1];
+                updated[updated.length - 1] = {
+                  ...last,
+                  content: last.content + token,
+                };
+                return updated;
+              });
+            } catch {
+              // Malformed JSON in a data field — skip silently
+            }
+          }
+        }
+      }
+    } catch (err) {
+      // Replace the empty assistant placeholder with an inline error
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          ...updated[updated.length - 1],
+          content: `⚠ Could not reach the AI — ${
+            err instanceof Error ? err.message : "unknown error"
+          }. Is the backend running?`,
+        };
+        return updated;
+      });
+    } finally {
+      setIsStreaming(false);
+    }
+  }
+
+  // ─── Shared JSX fragments ─────────────────────────────────────────────────
+
+  const messageList = (
+    <>
+      {messages.length === 0 ? (
+        <p className="text-xs text-center mt-4" style={{ color: "var(--text-muted)" }}>
+          Ask me anything about stocks, indices, or market trends.
+        </p>
+      ) : (
+        messages.map((msg, i) => (
+          <MessageBubble
+            key={msg.id}
+            message={msg}
+            isThinking={
+              isStreaming &&
+              i === messages.length - 1 &&
+              msg.role === "assistant" &&
+              msg.content === ""
+            }
+          />
+        ))
+      )}
+      <div ref={bottomRef} />
+    </>
+  );
+
+  const inputBar = (
+    <InputBar
+      value={input}
+      onChange={setInput}
+      onSubmit={sendMessage}
+      disabled={isStreaming}
+    />
+  );
+
+  // ─── MODAL MODE ──────────────────────────────────────────────────────────────
+
   if (isModal) {
     return (
       <>
-        {/* ── Accordion stub stays visible behind the modal ── */}
         <AccordionStub onOpen={() => setIsModal(true)} />
 
-        {/* ── Modal overlay ── */}
         <div
           style={{
             position: "fixed",
@@ -155,10 +332,8 @@ export default function ChatPanel() {
             backgroundColor: "rgba(0, 0, 0, 0.55)",
             backdropFilter: "blur(2px)",
           }}
-          // Click backdrop to close
           onClick={() => setIsModal(false)}
         >
-          {/* Modal card — stop clicks propagating to backdrop */}
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
@@ -179,14 +354,16 @@ export default function ChatPanel() {
               style={{ borderColor: "var(--border)" }}
             >
               <div className="flex items-center gap-2.5">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--blue)" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                  strokeLinejoin="round" style={{ color: "var(--blue)" }}
+                >
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 </svg>
                 <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
                   AI Assistant
                 </span>
               </div>
-              {/* Close button */}
               <button
                 onClick={() => setIsModal(false)}
                 className="flex items-center justify-center w-7 h-7 rounded-md transition-colors"
@@ -201,37 +378,30 @@ export default function ChatPanel() {
                 }}
                 aria-label="Close modal"
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
             </div>
 
-            {/* Modal messages */}
             <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
-              {STATIC_MESSAGES.map((msg) => (
-                <MessageBubble key={msg.id} message={msg} />
-              ))}
-              <div ref={bottomRef} />
+              {messageList}
             </div>
-
-            <InputBar />
+            {inputBar}
           </div>
         </div>
       </>
     );
   }
 
-  // ─── ACCORDION MODE ────────────────────────────────────────────────────────
-  return (
-    // Full-width row — gives the panel something to sit inside in the flex layout
-    <div className="shrink-0" style={{ backgroundColor: "var(--bg-base)" }}>
+  // ─── ACCORDION MODE ──────────────────────────────────────────────────────────
 
-      {/*
-       * The visible panel is 75% wide and centred.
-       * borderBottom: none + rounded top corners make it look like a tray
-       * rising from the bottom of the page.
-       */}
+  return (
+    <div className="shrink-0" style={{ backgroundColor: "var(--bg-base)" }}>
       <div
         style={{
           width: "75%",
@@ -243,7 +413,7 @@ export default function ChatPanel() {
           boxShadow: "0 -4px 24px rgba(0,0,0,0.08)",
         }}
       >
-        {/* ── Accordion header ── */}
+        {/* Accordion header */}
         <button
           onClick={() => setIsOpen((prev) => !prev)}
           className="flex items-center justify-between w-full px-5 py-3 text-sm font-medium"
@@ -251,26 +421,25 @@ export default function ChatPanel() {
           aria-expanded={isOpen}
           aria-controls="chat-panel-body"
         >
-          {/* Left: chat icon + label + hint */}
           <div className="flex items-center gap-2.5">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--blue)" }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+              strokeLinejoin="round" style={{ color: "var(--blue)" }}
+            >
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
             <span>AI Assistant</span>
             {!isOpen && (
               <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                Ask about stocks, indices, or market trends…
+                {isStreaming
+                  ? "Thinking…"
+                  : "Ask about stocks, indices, or market trends…"}
               </span>
             )}
           </div>
 
-          {/* Right: pop-out button + chevron */}
           <div className="flex items-center gap-2">
-            {/*
-             * Pop-out button — opens modal mode.
-             * stopPropagation prevents the accordion from toggling when
-             * the user clicks this button instead of the header bar.
-             */}
+            {/* Pop-out button */}
             <span
               role="button"
               onClick={(e) => { e.stopPropagation(); setIsModal(true); }}
@@ -287,8 +456,10 @@ export default function ChatPanel() {
               title="Open in modal"
               aria-label="Open in modal"
             >
-              {/* External / expand icon */}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <polyline points="15 3 21 3 21 9" />
                 <polyline points="9 21 3 21 3 15" />
                 <line x1="21" y1="3" x2="14" y2="10" />
@@ -296,10 +467,11 @@ export default function ChatPanel() {
               </svg>
             </span>
 
-            {/* Chevron — rotates when open */}
+            {/* Chevron */}
             <svg
               width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+              strokeLinejoin="round"
               style={{
                 color: "var(--text-secondary)",
                 transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
@@ -311,7 +483,7 @@ export default function ChatPanel() {
           </div>
         </button>
 
-        {/* ── Expandable body ── */}
+        {/* Expandable body */}
         <div
           id="chat-panel-body"
           style={{
@@ -325,12 +497,9 @@ export default function ChatPanel() {
             style={{ height: `${ACCORDION_HEIGHT}px`, borderColor: "var(--border)" }}
           >
             <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-3">
-              {STATIC_MESSAGES.map((msg) => (
-                <MessageBubble key={msg.id} message={msg} />
-              ))}
-              <div ref={bottomRef} />
+              {messageList}
             </div>
-            <InputBar />
+            {inputBar}
           </div>
         </div>
       </div>
@@ -338,7 +507,8 @@ export default function ChatPanel() {
   );
 }
 
-// Minimal stub shown behind the modal so the layout doesn't shift
+// ─── Accordion stub (shown behind the modal to prevent layout shift) ──────────
+
 function AccordionStub({ onOpen }: { onOpen: () => void }) {
   return (
     <div className="shrink-0" style={{ backgroundColor: "var(--bg-base)" }}>
@@ -358,7 +528,10 @@ function AccordionStub({ onOpen }: { onOpen: () => void }) {
           className="flex items-center gap-2.5 w-full px-5 py-3 text-sm font-medium"
           style={{ color: "var(--text-primary)" }}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--blue)" }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+            strokeLinejoin="round" style={{ color: "var(--blue)" }}
+          >
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
           <span>AI Assistant</span>
