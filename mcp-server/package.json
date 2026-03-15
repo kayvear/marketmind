@@ -1,0 +1,5 @@
+{
+  "name": "marketmind-mcp-server",
+  "version": "1.0.0",
+  "description": "MarketMind MCP server (Python) — package.json required by mcp dev / MCP Inspector"
+}
