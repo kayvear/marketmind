@@ -1,26 +1,19 @@
 "use client";
 
 /**
- * ChatPanel.tsx — Phase 6B
+ * ChatPanel.tsx — Phase 6B / Phase 7
  *
- * Two display modes (unchanged from Phase 5):
+ * Two display modes:
  *   1. ACCORDION — 75%-wide panel docked to the bottom, slides open/closed.
  *   2. MODAL     — centered overlay with backdrop blur.
  *
- * Phase 6B additions:
- *   - Live SSE streaming from POST /api/chat
- *   - Conversation stored in useState (cleared on page refresh)
- *   - InputBar is now interactive (controlled input + Enter / send button)
- *   - "Thinking" dots while the first token hasn't arrived yet
- *   - Error bubble if the backend is unreachable
- *
- * Phase 7 will add a gear ⚙ settings popover in the header for:
- *   - Verbosity toggle  (Brief / Normal / Detailed)
- *   - Model selector    (Opus / Sonnet / Haiku)
- * The backend already accepts these as optional fields in the request body.
+ * Phase 7 additions:
+ *   - ⚙ Settings popover (verbosity, model, theme) in the chat header
+ *   - Theme toggle moved here from TopNav
  */
 
 import { useRef, useEffect, useState } from "react";
+import { useTheme } from "next-themes";
 
 const API_BASE = "http://localhost:8000";
 
@@ -34,7 +27,6 @@ interface Message {
 }
 
 // ─── Text renderer ────────────────────────────────────────────────────────────
-// Handles **bold** and newlines. Full markdown via react-markdown in a later phase.
 
 function formatContent(text: string) {
   return text.split("\n").map((line, i, arr) => (
@@ -68,7 +60,6 @@ function MessageBubble({
         }}
       >
         {isThinking ? (
-          // Animated "thinking" dots while waiting for the first token
           <span className="flex gap-1 items-center py-0.5">
             {[0, 150, 300].map((delay) => (
               <span
@@ -154,39 +145,70 @@ function InputBar({ value, onChange, onSubmit, disabled }: InputBarProps) {
 
 const ACCORDION_HEIGHT = 380;
 
+const MODELS = [
+  { id: "claude-opus-4-6",           label: "Opus 4.6",   desc: "Most capable" },
+  { id: "claude-sonnet-4-6",         label: "Sonnet 4.6", desc: "Balanced"     },
+  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5",  desc: "Fastest"      },
+] as const;
+type ModelId = typeof MODELS[number]["id"];
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ChatPanel() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput]       = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [isOpen, setIsOpen]     = useState(false);
-  const [isModal, setIsModal]   = useState(false);
-  const bottomRef               = useRef<HTMLDivElement>(null);
+  const [messages, setMessages]         = useState<Message[]>([]);
+  const [input, setInput]               = useState("");
+  const [isStreaming, setIsStreaming]    = useState(false);
+  const [isOpen, setIsOpen]             = useState(false);
+  const [isModal, setIsModal]           = useState(false);
 
-  // Scroll to bottom when the panel opens or switches to modal
+  // Settings
+  const [verbosity, setVerbosity]       = useState<"brief" | "normal" | "detailed">("normal");
+  const [model, setModel]               = useState<ModelId>("claude-opus-4-6");
+  const [showSettings, setShowSettings] = useState(false);
+  const [mounted, setMounted]           = useState(false);
+  const { theme, setTheme }             = useTheme();
+
+  const bottomRef   = useRef<HTMLDivElement>(null);
+  const settingsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     if (isOpen || isModal) {
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 320);
     }
   }, [isOpen, isModal]);
 
-  // Auto-scroll as tokens stream in
   useEffect(() => {
     if ((isOpen || isModal) && messages.length > 0) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, isOpen, isModal]);
 
-  // Close modal on Escape
+  // Escape: close settings first, then modal
   useEffect(() => {
-    if (!isModal) return;
+    if (!isModal && !showSettings) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setIsModal(false);
+      if (e.key === "Escape") {
+        if (showSettings) setShowSettings(false);
+        else setIsModal(false);
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [isModal]);
+  }, [isModal, showSettings]);
+
+  // Click outside settings → close
+  useEffect(() => {
+    if (!showSettings) return;
+    function handleClick(e: MouseEvent) {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setShowSettings(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showSettings]);
 
   // ─── Send message + SSE stream ────────────────────────────────────────────
 
@@ -194,10 +216,8 @@ export default function ChatPanel() {
     const text = input.trim();
     if (!text || isStreaming) return;
 
-    // Snapshot history BEFORE adding the new user message
     const history = messages.map(({ role, content }) => ({ role, content }));
 
-    // Show user bubble immediately; add empty assistant bubble as placeholder
     const userMsg: Message = { id: Date.now(),     role: "user",      content: text };
     const aiMsg:   Message = { id: Date.now() + 1, role: "assistant", content: "" };
     setMessages((prev) => [...prev, userMsg, aiMsg]);
@@ -208,7 +228,7 @@ export default function ChatPanel() {
       const response = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history }),
+        body: JSON.stringify({ message: text, history, verbosity, model }),
       });
 
       if (!response.ok || !response.body) {
@@ -220,17 +240,13 @@ export default function ChatPanel() {
       let buffer = "";
       let isDone = false;
 
-      // Read the SSE stream chunk by chunk.
-      // Each SSE event ends with \n\n. Chunks from the network may contain
-      // several complete events, or split an event across multiple reads,
-      // so we buffer and split on \n\n to get clean event blocks.
       while (!isDone) {
         const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
         const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? ""; // last slice may be an incomplete event
+        buffer = parts.pop() ?? "";
 
         for (const part of parts) {
           if (!part.trim()) continue;
@@ -250,20 +266,16 @@ export default function ChatPanel() {
               setMessages((prev) => {
                 const updated = [...prev];
                 const last    = updated[updated.length - 1];
-                updated[updated.length - 1] = {
-                  ...last,
-                  content: last.content + token,
-                };
+                updated[updated.length - 1] = { ...last, content: last.content + token };
                 return updated;
               });
             } catch {
-              // Malformed JSON in a data field — skip silently
+              // skip malformed data
             }
           }
         }
       }
     } catch (err) {
-      // Replace the empty assistant placeholder with an inline error
       setMessages((prev) => {
         const updated = [...prev];
         updated[updated.length - 1] = {
@@ -278,6 +290,155 @@ export default function ChatPanel() {
       setIsStreaming(false);
     }
   }
+
+  // ─── Settings popover (render helper, not a React component) ─────────────
+  // popoverUp=true  → anchored bottom (accordion: header is at page bottom)
+  // popoverUp=false → anchored top    (modal: header is at modal top)
+
+  const settingsPopoverContent = (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        width: "220px",
+        backgroundColor: "var(--bg-surface)",
+        border: "1px solid var(--border)",
+        borderRadius: "12px",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
+        padding: "16px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "14px",
+      }}
+    >
+      {/* Verbosity */}
+      <div>
+        <p className="text-xs font-semibold mb-2 tracking-wide" style={{ color: "var(--text-muted)" }}>
+          VERBOSITY
+        </p>
+        <div className="flex gap-1.5">
+          {(["brief", "normal", "detailed"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setVerbosity(v)}
+              className="flex-1 py-1.5 rounded-lg text-xs font-medium capitalize"
+              style={{
+                backgroundColor: verbosity === v ? "var(--blue)" : "var(--bg-hover)",
+                color: verbosity === v ? "white" : "var(--text-secondary)",
+              }}
+            >
+              {v === "brief" ? "Brief" : v === "normal" ? "Normal" : "Detailed"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Model */}
+      <div>
+        <p className="text-xs font-semibold mb-2 tracking-wide" style={{ color: "var(--text-muted)" }}>
+          MODEL
+        </p>
+        <div className="flex flex-col gap-1">
+          {MODELS.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => setModel(m.id)}
+              className="flex items-center justify-between px-3 py-2 rounded-lg text-xs"
+              style={{
+                backgroundColor: model === m.id ? "var(--bg-active)" : "transparent",
+                color: model === m.id ? "var(--text-primary)" : "var(--text-secondary)",
+                border: `1px solid ${model === m.id ? "var(--border)" : "transparent"}`,
+              }}
+              onMouseEnter={(e) => {
+                if (model !== m.id)
+                  (e.currentTarget as HTMLElement).style.backgroundColor = "var(--bg-hover)";
+              }}
+              onMouseLeave={(e) => {
+                if (model !== m.id)
+                  (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
+              }}
+            >
+              <span className="font-medium">{m.label}</span>
+              <span style={{ color: "var(--text-muted)" }}>{m.desc}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Theme */}
+      {mounted && (
+        <div>
+          <p className="text-xs font-semibold mb-2 tracking-wide" style={{ color: "var(--text-muted)" }}>
+            THEME
+          </p>
+          <div className="flex gap-1.5">
+            {(["light", "dark"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTheme(t)}
+                className="flex-1 py-1.5 rounded-lg text-xs font-medium capitalize"
+                style={{
+                  backgroundColor: theme === t ? "var(--blue)" : "var(--bg-hover)",
+                  color: theme === t ? "white" : "var(--text-secondary)",
+                }}
+              >
+                {t === "light" ? "Light" : "Dark"}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const gearButton = (popoverUp: boolean) => (
+    <div className="relative" ref={settingsRef}>
+      <span
+        role="button"
+        onClick={(e) => { e.stopPropagation(); setShowSettings((v) => !v); }}
+        className="flex items-center justify-center w-6 h-6 rounded transition-colors"
+        style={{
+          color: showSettings ? "var(--blue)" : "var(--text-secondary)",
+          backgroundColor: showSettings ? "var(--bg-active)" : "transparent",
+        }}
+        onMouseEnter={(e) => {
+          if (!showSettings) {
+            (e.currentTarget as HTMLElement).style.color = "var(--text-primary)";
+            (e.currentTarget as HTMLElement).style.backgroundColor = "var(--bg-hover)";
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!showSettings) {
+            (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
+            (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
+          }
+        }}
+        title="Settings"
+        aria-label="Settings"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        >
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </span>
+
+      {showSettings && (
+        <div
+          style={{
+            position: "absolute",
+            ...(popoverUp
+              ? { bottom: "calc(100% + 8px)" }
+              : { top: "calc(100% + 8px)" }),
+            right: 0,
+            zIndex: 400,
+          }}
+        >
+          {settingsPopoverContent}
+        </div>
+      )}
+    </div>
+  );
 
   // ─── Shared JSX fragments ─────────────────────────────────────────────────
 
@@ -332,7 +493,7 @@ export default function ChatPanel() {
             backgroundColor: "rgba(0, 0, 0, 0.55)",
             backdropFilter: "blur(2px)",
           }}
-          onClick={() => setIsModal(false)}
+          onClick={() => { setShowSettings(false); setIsModal(false); }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -364,28 +525,31 @@ export default function ChatPanel() {
                   AI Assistant
                 </span>
               </div>
-              <button
-                onClick={() => setIsModal(false)}
-                className="flex items-center justify-center w-7 h-7 rounded-md transition-colors"
-                style={{ color: "var(--text-secondary)" }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.backgroundColor = "var(--bg-hover)";
-                  (e.currentTarget as HTMLElement).style.color = "var(--text-primary)";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
-                  (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
-                }}
-                aria-label="Close modal"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
-                  strokeLinejoin="round"
+              <div className="flex items-center gap-2">
+                {gearButton(false)}
+                <button
+                  onClick={() => setIsModal(false)}
+                  className="flex items-center justify-center w-7 h-7 rounded-md transition-colors"
+                  style={{ color: "var(--text-secondary)" }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLElement).style.backgroundColor = "var(--bg-hover)";
+                    (e.currentTarget as HTMLElement).style.color = "var(--text-primary)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
+                    (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
+                  }}
+                  aria-label="Close modal"
                 >
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
@@ -413,15 +577,17 @@ export default function ChatPanel() {
           boxShadow: "0 -4px 24px rgba(0,0,0,0.08)",
         }}
       >
-        {/* Accordion header */}
-        <button
-          onClick={() => setIsOpen((prev) => !prev)}
-          className="flex items-center justify-between w-full px-5 py-3 text-sm font-medium"
-          style={{ color: "var(--text-primary)" }}
-          aria-expanded={isOpen}
-          aria-controls="chat-panel-body"
-        >
-          <div className="flex items-center gap-2.5">
+        {/* Accordion header — split into toggle button (left) + controls (right)
+            to avoid nesting <button> inside <button> */}
+        <div className="flex items-center justify-between w-full px-5 py-3 text-sm font-medium">
+          {/* Left: clicking this area expands/collapses */}
+          <button
+            onClick={() => setIsOpen((prev) => !prev)}
+            className="flex items-center gap-2.5 flex-1 text-left"
+            style={{ color: "var(--text-primary)" }}
+            aria-expanded={isOpen}
+            aria-controls="chat-panel-body"
+          >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2" strokeLinecap="round"
               strokeLinejoin="round" style={{ color: "var(--blue)" }}
@@ -431,18 +597,19 @@ export default function ChatPanel() {
             <span>AI Assistant</span>
             {!isOpen && (
               <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                {isStreaming
-                  ? "Thinking…"
-                  : "Ask about stocks, indices, or market trends…"}
+                {isStreaming ? "Thinking…" : "Ask about stocks, indices, or market trends…"}
               </span>
             )}
-          </div>
+          </button>
 
+          {/* Right: gear, pop-out, chevron — siblings of the toggle button */}
           <div className="flex items-center gap-2">
-            {/* Pop-out button */}
+            {gearButton(true)}
+
+            {/* Pop-out */}
             <span
               role="button"
-              onClick={(e) => { e.stopPropagation(); setIsModal(true); }}
+              onClick={() => setIsModal(true)}
               className="flex items-center justify-center w-6 h-6 rounded transition-colors"
               style={{ color: "var(--text-secondary)" }}
               onMouseEnter={(e) => {
@@ -467,21 +634,28 @@ export default function ChatPanel() {
               </svg>
             </span>
 
-            {/* Chevron */}
-            <svg
-              width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{
-                color: "var(--text-secondary)",
-                transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
-                transition: "transform 0.25s ease",
-              }}
+            {/* Chevron — also toggles the panel */}
+            <span
+              role="button"
+              onClick={() => setIsOpen((prev) => !prev)}
+              className="flex items-center justify-center w-5 h-5"
+              aria-label={isOpen ? "Collapse" : "Expand"}
             >
-              <polyline points="18 15 12 9 6 15" />
-            </svg>
+              <svg
+                width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{
+                  color: "var(--text-secondary)",
+                  transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
+                  transition: "transform 0.25s ease",
+                }}
+              >
+                <polyline points="18 15 12 9 6 15" />
+              </svg>
+            </span>
           </div>
-        </button>
+        </div>
 
         {/* Expandable body */}
         <div
