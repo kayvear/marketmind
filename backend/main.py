@@ -4,10 +4,12 @@ main.py — Phase 4: FastAPI Backend
 Wraps the Claude + MCP agent in HTTP endpoints so the Next.js frontend can call it.
 
 Endpoints:
-  GET  /health                      → sanity check (Phase 1, unchanged)
-  GET  /api/market/overview         → calls get_market_overview() via MCP directly
-  GET  /api/market/history/{symbol} → calls get_historical_prices() via MCP directly
-  POST /api/chat                    → runs the full agentic loop, streams tokens via SSE
+  GET  /health                                  → sanity check (Phase 1, unchanged)
+  GET  /api/market/overview                     → calls get_market_overview() via MCP directly
+  GET  /api/market/history/{symbol}             → calls get_historical_prices() via MCP directly
+  GET  /api/economics/overview                  → calls get_economic_overview() via MCP directly
+  GET  /api/economics/history/{series_id}       → calls get_economic_series() via MCP directly
+  POST /api/chat                                → runs the full agentic loop, streams tokens via SSE
 """
 
 import json
@@ -145,6 +147,35 @@ async def market_history(symbol: str, period: str = "1mo"):
         result = await session.call_tool(
             "get_historical_prices",
             {"symbol": symbol.upper(), "period": period},
+        )
+        return parse_mcp_result(result)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/economics/overview
+# ---------------------------------------------------------------------------
+@app.get("/api/economics/overview")
+async def economics_overview():
+    """Return the latest value for Fed Rate, CPI YoY, Unemployment, and 10Y Yield."""
+    async with get_mcp_session() as session:
+        result = await session.call_tool("get_economic_overview", {})
+        return parse_mcp_result(result)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/economics/history/{series_id}
+# ---------------------------------------------------------------------------
+# {series_id} is a path parameter — e.g. /api/economics/history/FEDFUNDS
+# ?period=    is an optional query parameter — defaults to "5y"
+# Valid period values match get_economic_series(): 1y, 2y, 5y, 10y, 20y, max
+# ---------------------------------------------------------------------------
+@app.get("/api/economics/history/{series_id}")
+async def economics_history(series_id: str, period: str = "5y"):
+    """Return historical data for a FRED series. Add ?period=10y to change range."""
+    async with get_mcp_session() as session:
+        result = await session.call_tool(
+            "get_economic_series",
+            {"series_id": series_id.upper(), "period": period},
         )
         return parse_mcp_result(result)
 
