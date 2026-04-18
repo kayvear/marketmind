@@ -17,9 +17,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const TABS = [
-  { href: "/dashboard", label: "Dashboard" },
-  // Add future tabs here, e.g.:
-  // { href: "/fred", label: "FRED" },
+  { href: "/",           label: "Overview"  },
+  { href: "/markets",    label: "Markets"   },
+  { href: "/economics",  label: "Economics" },
 ];
 
 export default function TopNav() {
@@ -49,7 +49,7 @@ export default function TopNav() {
       {/* Centre — horizontal tabs */}
       <nav className="flex items-center gap-1">
         {TABS.map(({ href, label }) => {
-          const isActive = pathname === href || pathname.startsWith(href + "/");
+          const isActive = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
           return (
             <Link
               key={href}
