@@ -185,16 +185,26 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-6">
-      {/* Page header */}
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-          Market Overview
+    <div style={{ padding: "32px 40px" }}>
+      {/* Editorial header */}
+      <header style={{ marginBottom: 32 }}>
+        <div style={{
+          fontFamily: "var(--sans)", fontSize: 12, fontWeight: 500,
+          textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--fg2)",
+        }}>
+          {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+        </div>
+        <h1 style={{
+          fontFamily: "var(--serif-display)", fontSize: 44, fontWeight: 400,
+          lineHeight: 1.1, letterSpacing: "-0.015em",
+          color: "var(--fg1)", margin: "6px 0",
+        }}>
+          Market overview
         </h1>
-        <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
+        <p style={{ fontFamily: "var(--sans)", fontSize: 14, color: "var(--fg2)", margin: 0 }}>
           US equity indices · Live
         </p>
-      </div>
+      </header>
 
       {/* Overview error */}
       {overviewError && <ErrorBanner message={overviewError} />}
@@ -279,7 +289,11 @@ export default function DashboardPage() {
       {chartLoading ? (
         <ChartSkeleton />
       ) : (
-        chartData && <PriceChart data={chartData} symbol={symbol} />
+        chartData && (
+          <div data-accent="blue">
+            <PriceChart data={chartData} symbol={symbol} />
+          </div>
+        )
       )}
     </div>
   );

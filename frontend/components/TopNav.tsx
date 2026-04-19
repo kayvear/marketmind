@@ -42,7 +42,7 @@ export default function TopNav() {
       <div className="flex items-center gap-2.5">
         <div
           className="flex items-center justify-center w-7 h-7 rounded-md text-white text-xs font-bold shrink-0"
-          style={{ backgroundColor: "var(--blue)" }}
+          style={{ backgroundColor: "var(--accent)" }}
         >
           M
         </div>
@@ -85,16 +85,18 @@ export default function TopNav() {
 
       {/* Right — theme toggle */}
       {mounted && (
-        <div className="flex items-center gap-1 rounded-lg p-1" style={{ backgroundColor: "var(--bg-hover)" }}>
+        <div style={{ display: "flex", gap: 2, padding: 3, background: "var(--bg-page)", border: "1px solid var(--border)", borderRadius: "var(--r-md)" }}>
           {(["light", "dark"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTheme(t)}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors"
               style={{
-                backgroundColor: theme === t ? "var(--bg-surface)" : "transparent",
-                color: theme === t ? "var(--text-primary)" : "var(--text-secondary)",
-                boxShadow: theme === t ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "4px 10px", fontFamily: "var(--sans)", fontSize: 11, fontWeight: 500,
+                border: "none", cursor: "pointer", borderRadius: "var(--r-sm)",
+                background: theme === t ? "var(--bg-surface)" : "transparent",
+                color: theme === t ? "var(--fg1)" : "var(--fg2)",
+                boxShadow: theme === t ? "var(--shadow-1)" : "none",
               }}
             >
               {t === "light" ? (

@@ -41,7 +41,11 @@ export default function MarketCard({ name, symbol, price, change, changePercent 
       </div>
 
       {/* Price */}
-      <div className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>
+      <div style={{
+        fontFamily: "var(--sans)", fontSize: 22, fontWeight: 600,
+        letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums",
+        color: "var(--fg1)",
+      }}>
         {price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
       </div>
 

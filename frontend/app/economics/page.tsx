@@ -599,16 +599,26 @@ export default function EconomicsPage() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
-          US Economy
+    <div style={{ padding: "32px 40px" }}>
+      {/* Editorial header */}
+      <header style={{ marginBottom: 32 }}>
+        <div style={{
+          fontFamily: "var(--sans)", fontSize: 12, fontWeight: 500,
+          textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--fg2)",
+        }}>
+          Federal Reserve · FRED
+        </div>
+        <h1 style={{
+          fontFamily: "var(--serif-display)", fontSize: 44, fontWeight: 400,
+          lineHeight: 1.1, letterSpacing: "-0.015em",
+          color: "var(--fg1)", margin: "6px 0",
+        }}>
+          US economy
         </h1>
-        <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
-          Key macroeconomic indicators · FRED data
+        <p style={{ fontFamily: "var(--sans)", fontSize: 14, color: "var(--fg2)", margin: 0 }}>
+          Key macroeconomic indicators
         </p>
-      </div>
+      </header>
 
       {overviewError && <ErrorBanner message={overviewError} />}
 
