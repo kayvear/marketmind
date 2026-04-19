@@ -44,7 +44,9 @@ export default function RootLayout({
               className="flex-1 overflow-y-auto"
               style={{ backgroundColor: "var(--bg-base)" }}
             >
-              {children}
+              <div className="max-w-[80%] mx-auto">
+                {children}
+              </div>
             </main>
             <ChatPanel />
           </div>

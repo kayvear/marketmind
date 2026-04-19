@@ -181,6 +181,42 @@ async def economics_history(series_id: str, period: str = "5y"):
 
 
 # ---------------------------------------------------------------------------
+# GET /api/economics/search
+# ---------------------------------------------------------------------------
+@app.get("/api/economics/search")
+async def economics_search(q: str, limit: int = 8):
+    """Search FRED series by keyword. Returns title, units, frequency."""
+    async with get_mcp_session() as session:
+        result = await session.call_tool("search_fred", {"query": q, "limit": limit})
+        return parse_mcp_result(result)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/economics/categories
+# ---------------------------------------------------------------------------
+@app.get("/api/economics/categories")
+async def economics_categories(parent_id: int = 0):
+    """Browse FRED category tree. parent_id=0 returns top-level categories."""
+    async with get_mcp_session() as session:
+        result = await session.call_tool("get_fred_categories", {"parent_id": parent_id})
+        return parse_mcp_result(result)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/economics/categories/{category_id}/series
+# ---------------------------------------------------------------------------
+@app.get("/api/economics/categories/{category_id}/series")
+async def economics_category_series(category_id: int):
+    """
+    Get contents of a FRED category.
+    Returns { is_leaf, subcategories, series } — is_leaf tells you which to use.
+    """
+    async with get_mcp_session() as session:
+        result = await session.call_tool("get_category_series", {"category_id": category_id})
+        return parse_mcp_result(result)
+
+
+# ---------------------------------------------------------------------------
 # POST /api/chat  — SSE streaming
 # ---------------------------------------------------------------------------
 # This is the full agentic loop from agent.py, adapted for streaming.
@@ -257,6 +293,8 @@ async def chat(request: ChatRequest):
                 {"role": "user", "content": request.message},
             ]
 
+            tools_called: list[str] = []  # accumulates tool names across all loop iterations
+
             # --- Agentic loop ---
             # Identical logic to agent.py, but uses client.messages.stream()
             # instead of client.messages.create().
@@ -291,6 +329,7 @@ async def chat(request: ChatRequest):
                     tool_results = []
                     for block in final_message.content:
                         if block.type == "tool_use":
+                            tools_called.append(block.name)
                             result = await session.call_tool(block.name, block.input)
                             result_text = " ".join(
                                 c.text for c in result.content if hasattr(c, "text")
@@ -307,6 +346,8 @@ async def chat(request: ChatRequest):
 
                 # End turn: Claude has given its final answer
                 elif final_message.stop_reason == "end_turn":
+                    meta = {"model": request.model, "tools": tools_called}
+                    yield f"event: meta\ndata: {json.dumps(meta)}\n\n"
                     yield "event: done\ndata: \n\n"
                     break
 

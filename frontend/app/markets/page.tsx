@@ -185,7 +185,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="p-6">
       {/* Page header */}
       <div className="mb-6">
         <h1 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>

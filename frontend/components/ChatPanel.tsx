@@ -13,18 +13,28 @@
  */
 
 import { useRef, useEffect, useState } from "react";
-import { useTheme } from "next-themes";
 
 const API_BASE = "http://localhost:8000";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Role = "user" | "assistant";
+interface MessageMeta {
+  model: string;
+  tools: string[];
+}
 interface Message {
   id: number;
   role: Role;
   content: string;
+  meta?: MessageMeta;
 }
+
+const MODEL_SHORT: Record<string, string> = {
+  "claude-opus-4-6":           "Opus 4.6",
+  "claude-sonnet-4-6":         "Sonnet 4.6",
+  "claude-haiku-4-5-20251001": "Haiku 4.5",
+};
 
 // ─── Text renderer ────────────────────────────────────────────────────────────
 
@@ -49,8 +59,10 @@ function MessageBubble({
   isThinking?: boolean;
 }) {
   const isUser = message.role === "user";
+  const [showTooltip, setShowTooltip] = useState(false);
+
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
       <div
         className="max-w-[75%] px-3.5 py-2.5 text-sm leading-relaxed"
         style={{
@@ -76,6 +88,55 @@ function MessageBubble({
           formatContent(message.content)
         )}
       </div>
+
+      {/* Meta tooltip — only for completed assistant messages */}
+      {!isUser && message.meta && (
+        <div
+          className="relative mt-1 ml-1"
+          onMouseEnter={() => setShowTooltip(true)}
+          onMouseLeave={() => setShowTooltip(false)}
+        >
+          <span
+            className="text-xs cursor-default select-none"
+            style={{ color: "var(--text-muted)" }}
+          >
+            ⓘ
+          </span>
+
+          {showTooltip && (
+            <div
+              style={{
+                position: "absolute",
+                bottom: "calc(100% + 6px)",
+                left: 0,
+                zIndex: 100,
+                backgroundColor: "var(--bg-surface)",
+                border: "1px solid var(--border)",
+                borderRadius: "8px",
+                padding: "8px 12px",
+                whiteSpace: "nowrap",
+                boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+                lineHeight: "1.7",
+              }}
+            >
+              <div className="text-xs">
+                <span style={{ color: "var(--text-muted)" }}>Model  </span>
+                <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                  {MODEL_SHORT[message.meta.model] ?? message.meta.model}
+                </span>
+              </div>
+              <div className="text-xs">
+                <span style={{ color: "var(--text-muted)" }}>Tools  </span>
+                <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                  {message.meta.tools.length > 0
+                    ? message.meta.tools.join(", ")
+                    : "none"}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -165,13 +226,9 @@ export default function ChatPanel() {
   const [verbosity, setVerbosity]       = useState<"brief" | "normal" | "detailed">("normal");
   const [model, setModel]               = useState<ModelId>("claude-opus-4-6");
   const [showSettings, setShowSettings] = useState(false);
-  const [mounted, setMounted]           = useState(false);
-  const { theme, setTheme }             = useTheme();
 
   const bottomRef   = useRef<HTMLDivElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (isOpen || isModal) {
@@ -260,7 +317,20 @@ export default function ChatPanel() {
 
           if (eventType === "done") { isDone = true; break; }
 
-          if (eventData) {
+          if (eventType === "meta" && eventData) {
+            try {
+              const meta: MessageMeta = JSON.parse(eventData);
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { ...updated[updated.length - 1], meta };
+                return updated;
+              });
+            } catch {
+              // skip malformed meta
+            }
+          }
+
+          if (eventType === "message" && eventData) {
             try {
               const token: string = JSON.parse(eventData);
               setMessages((prev) => {
@@ -364,29 +434,6 @@ export default function ChatPanel() {
         </div>
       </div>
 
-      {/* Theme */}
-      {mounted && (
-        <div>
-          <p className="text-xs font-semibold mb-2 tracking-wide" style={{ color: "var(--text-muted)" }}>
-            THEME
-          </p>
-          <div className="flex gap-1.5">
-            {(["light", "dark"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTheme(t)}
-                className="flex-1 py-1.5 rounded-lg text-xs font-medium capitalize"
-                style={{
-                  backgroundColor: theme === t ? "var(--blue)" : "var(--bg-hover)",
-                  color: theme === t ? "white" : "var(--text-secondary)",
-                }}
-              >
-                {t === "light" ? "Light" : "Dark"}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 
