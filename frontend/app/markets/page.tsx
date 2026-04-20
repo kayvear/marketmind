@@ -295,6 +295,17 @@ export default function DashboardPage() {
           </div>
         )
       )}
+
+      {/* Attribution */}
+      <p style={{
+        marginTop: 24, fontFamily: "var(--sans)", fontSize: 11,
+        color: "var(--fg3)", textAlign: "right",
+      }}>
+        Market data via <a href="https://github.com/ranaroussi/yfinance" target="_blank" rel="noopener noreferrer"
+          style={{ color: "inherit", textDecoration: "underline", textDecorationColor: "var(--border)" }}>
+          yFinance
+        </a> · Yahoo Finance
+      </p>
     </div>
   );
 }

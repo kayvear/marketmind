@@ -1,0 +1,13 @@
+{
+  "name": "marketmind-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "capture": "node capture-demo.mjs"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.49.0",
+    "sharp": "^0.33.5"
+  }
+}

@@ -12,6 +12,7 @@ Endpoints:
   POST /api/chat                                → runs the full agentic loop, streams tokens via SSE
 """
 
+import asyncio
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -214,6 +215,78 @@ async def economics_category_series(category_id: int):
     async with get_mcp_session() as session:
         result = await session.call_tool("get_category_series", {"category_id": category_id})
         return parse_mcp_result(result)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/market/board
+# ---------------------------------------------------------------------------
+@app.get("/api/market/board")
+async def market_board():
+    """S&P 500, 10Y Yield, Gold, VIX — via MCP get_board_data tool."""
+    async with get_mcp_session() as session:
+        result = await session.call_tool("get_board_data", {})
+        return parse_mcp_result(result)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/market/movers
+# ---------------------------------------------------------------------------
+@app.get("/api/market/movers")
+async def market_movers():
+    """Top 4 gainers and losers from a curated large-cap list — via MCP get_movers tool."""
+    async with get_mcp_session() as session:
+        result = await session.call_tool("get_movers", {})
+        return parse_mcp_result(result)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/overview/briefing
+# ---------------------------------------------------------------------------
+@app.get("/api/overview/briefing")
+async def overview_briefing():
+    """
+    Fetches live board data via MCP, then passes it to Claude directly
+    (no tools needed — we supply the numbers as context) and returns a
+    short market briefing + topic tags.
+    """
+    # Fetch board data through MCP (same source as the board endpoint)
+    async with get_mcp_session() as session:
+        result = await session.call_tool("get_board_data", {})
+        board = parse_mcp_result(result) or []
+
+    market_context = "\n".join(
+        f"- {d['name']} ({d['label']}): {d['price']:.2f} "
+        f"({'+' if d['changePercent'] >= 0 else ''}{d['changePercent']:.2f}%)"
+        for d in board if "price" in d
+    )
+
+    model = "claude-sonnet-4-6"
+    client = anthropic.AsyncAnthropic()
+    response = await client.messages.create(
+        model=model,
+        max_tokens=300,
+        system=(
+            "You are writing a short market snapshot for a general audience — not financial professionals. "
+            "Use plain, everyday language. No jargon. Write 2–3 sentences that say what happened today "
+            "and why it matters, as if explaining to a smart friend who doesn't follow markets closely. "
+            "Then list 3–5 short topic tags (2–4 words each). "
+            "Respond with valid JSON only: {\"text\": \"...\", \"tags\": [\"...\"]}"
+        ),
+        messages=[{
+            "role": "user",
+            "content": f"Today's market data:\n{market_context}\n\nWrite the briefing."
+        }],
+    )
+
+    raw = response.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = "\n".join(raw.split("\n")[1:-1])
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        parsed = {"text": raw, "tags": []}
+
+    return {**parsed, "model": model, "tools_called": []}
 
 
 # ---------------------------------------------------------------------------

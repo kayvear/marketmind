@@ -40,12 +40,22 @@ export default function TopNav() {
     >
       {/* Left — logo */}
       <div className="flex items-center gap-2.5">
-        <div
-          className="flex items-center justify-center w-7 h-7 rounded-md text-white text-xs font-bold shrink-0"
-          style={{ backgroundColor: "var(--accent)" }}
+        <svg
+          width="22" height="22" viewBox="0 0 24 24" fill="#3B5269"
+          style={{ flexShrink: 0 }}
+          aria-hidden="true"
         >
-          M
-        </div>
+          {/* M as 5 bottom-aligned bars */}
+          <rect x="1"  y="8"  width="3" height="15" rx="1" />
+          <rect x="5"  y="13" width="3" height="10" rx="1" />
+          <rect x="9"  y="17" width="3" height="6"  rx="1" />
+          <rect x="13" y="13" width="3" height="10" rx="1" />
+          <rect x="17" y="8"  width="3" height="15" rx="1" />
+          {/* AI sparkle on top of right peak — same shape as chat rail sparkle,
+              scaled 0.43× and translated so its bottom tip lands at bar top (18.5, 8) */}
+          <path transform="translate(18.5,5) scale(0.43) translate(-12,-10)"
+            d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5z" />
+        </svg>
         <span className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>
           MarketMind
         </span>

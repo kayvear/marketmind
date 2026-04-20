@@ -462,5 +462,103 @@ def get_fred_series_info(series_id: str) -> dict:
         return {"error": str(e), "series_id": series_id}
 
 
+# ---------------------------------------------------------------------------
+# Tool 11: get_board_data
+# ---------------------------------------------------------------------------
+# Four cross-asset barometers: equities, rates, commodity, volatility.
+# Uses yf.download() for a single batch HTTP call instead of 4 serial calls.
+# ---------------------------------------------------------------------------
+
+BOARD_META = [
+    {"name": "S&P 500",     "symbol": "^GSPC",        "label": "US Equities", "source": "yf",   "unit": ""},
+    {"name": "10Y Yield",   "symbol": "^TNX",          "label": "US Treasury", "source": "yf",   "unit": "%"},
+    {"name": "30Y Mortgage","symbol": "MORTGAGE30US",  "label": "Housing",     "source": "fred", "unit": "%"},
+    {"name": "VIX",         "symbol": "^VIX",          "label": "Volatility",  "source": "yf",   "unit": ""},
+]
+
+@mcp.tool()
+def get_board_data() -> list[dict]:
+    """
+    Get a real-time snapshot of four cross-asset market barometers:
+    S&P 500 (US equities), 10-Year Treasury Yield (rates),
+    30-Year Mortgage Rate (housing/consumer), and VIX (volatility / fear gauge).
+
+    Returns price, point change, percent change, and unit for each.
+    """
+    result = []
+    for meta in BOARD_META:
+        try:
+            if meta["source"] == "fred":
+                data = _fred.get_series(meta["symbol"]).dropna()
+                price    = round(float(data.iloc[-1]), 2)
+                prev     = round(float(data.iloc[-2]), 2) if len(data) > 1 else price
+                change   = round(price - prev, 4)
+                chg_pct  = round((change / prev) * 100, 4) if prev else 0.0
+            else:
+                info     = yf.Ticker(meta["symbol"]).info
+                raw      = info.get("regularMarketPrice") or info.get("currentPrice")
+                price    = round(float(raw), 2) if raw else None
+                change   = round(float(info.get("regularMarketChange", 0)), 4)
+                chg_pct  = round(float(info.get("regularMarketChangePercent", 0)), 4)
+            result.append({**meta, "price": price, "change": change, "changePercent": chg_pct})
+        except Exception as e:
+            result.append({**meta, "error": str(e)})
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Tool 12: get_movers
+# ---------------------------------------------------------------------------
+# One batch yf.download() call across 25 large-cap stocks — much faster
+# than 25 serial get_stock_quote() calls.
+# ---------------------------------------------------------------------------
+
+_MOVER_PAIRS = [
+    ("AAPL", "Apple"),        ("MSFT", "Microsoft"),    ("NVDA", "NVIDIA"),
+    ("AMZN", "Amazon"),       ("GOOGL", "Alphabet"),    ("META", "Meta"),
+    ("TSLA", "Tesla"),        ("NFLX", "Netflix"),      ("AMD",  "AMD"),
+    ("JPM",  "JPMorgan"),     ("BAC",  "Bank of Am."),  ("GS",   "Goldman Sachs"),
+    ("XOM",  "Exxon"),        ("CVX",  "Chevron"),      ("PFE",  "Pfizer"),
+    ("JNJ",  "J&J"),          ("WMT",  "Walmart"),      ("COST", "Costco"),
+    ("BA",   "Boeing"),       ("CAT",  "Caterpillar"),  ("DIS",  "Disney"),
+    ("INTC", "Intel"),        ("UBER", "Uber"),          ("CRM",  "Salesforce"),
+    ("V",    "Visa"),
+]
+
+@mcp.tool()
+def get_movers(top_n: int = 4) -> dict:
+    """
+    Get the top gainers and losers from a curated large-cap stock universe.
+
+    Uses a single batch download for speed. Returns top_n each of:
+      gainers — stocks with the highest percent change today
+      losers  — stocks with the lowest percent change today
+
+    Each entry includes: sym, name, price, changePercent.
+    """
+    sym_to_name = {s: n for s, n in _MOVER_PAIRS}
+    symbols = list(sym_to_name.keys())
+
+    stocks = []
+    for sym, name in _MOVER_PAIRS:
+        try:
+            info = yf.Ticker(sym).info
+            price     = info.get("regularMarketPrice") or info.get("currentPrice")
+            change_pct = info.get("regularMarketChangePercent", 0)
+            if price is not None:
+                stocks.append({
+                    "sym":           sym,
+                    "name":          name,
+                    "price":         round(float(price), 2),
+                    "changePercent": round(float(change_pct), 4),
+                })
+        except Exception:
+            pass
+
+    gainers = sorted(stocks, key=lambda x: x["changePercent"], reverse=True)[:top_n]
+    losers  = sorted(stocks, key=lambda x: x["changePercent"])[:top_n]
+    return {"gainers": gainers, "losers": losers}
+
+
 if __name__ == "__main__":
     mcp.run()

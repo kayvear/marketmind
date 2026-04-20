@@ -736,6 +736,17 @@ export default function EconomicsPage() {
           </ResponsiveContainer>
         </div>
       )}
+
+      {/* Attribution */}
+      <p style={{
+        marginTop: 24, fontFamily: "var(--sans)", fontSize: 11,
+        color: "var(--fg3)", textAlign: "right",
+      }}>
+        Economic data via <a href="https://fred.stlouisfed.org" target="_blank" rel="noopener noreferrer"
+          style={{ color: "inherit", textDecoration: "underline", textDecorationColor: "var(--border)" }}>
+          FRED
+        </a> · Federal Reserve Bank of St. Louis
+      </p>
     </div>
   );
 }

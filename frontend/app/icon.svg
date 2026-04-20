@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <style>
+    rect, path { fill: #3B5269; }
+    @media (prefers-color-scheme: dark) {
+      rect, path { fill: #7BA7C8; }
+    }
+  </style>
+  <!-- M as 5 bottom-aligned bars -->
+  <rect x="1"  y="8"  width="3" height="15" rx="1"/>
+  <rect x="5"  y="13" width="3" height="10" rx="1"/>
+  <rect x="9"  y="17" width="3" height="6"  rx="1"/>
+  <rect x="13" y="13" width="3" height="10" rx="1"/>
+  <rect x="17" y="8"  width="3" height="15" rx="1"/>
+  <!-- AI sparkle on top of right peak (same path as chat rail, scaled 0.43x) -->
+  <path transform="translate(18.5,5) scale(0.43) translate(-12,-10)"
+    d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5z"/>
+</svg>
