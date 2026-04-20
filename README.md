@@ -7,6 +7,9 @@ An AI-powered finance and economics dashboard. Ask questions about markets and e
 ### Overview
 ![Overview page](docs/demo-overview.gif)
 
+### Markets
+![Markets page](docs/demo-markets.gif)
+
 ### Economics Explorer
 ![Economics page](docs/demo-economics.gif)
 

@@ -87,6 +87,31 @@ function wait(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// ── Markets demo ──────────────────────────────────────────────────────────────
+await capture("markets", async (page) => {
+  console.log("📸  Recording: Markets page…");
+  await page.goto(`${BASE_URL}/markets`, { waitUntil: "networkidle" });
+  await wait(2500);
+
+  // Click each index card to switch the chart
+  const marketCards = page.locator("[data-market-card]");
+  const count = await marketCards.count();
+  for (let i = 0; i < count; i++) {
+    await marketCards.nth(i).click();
+    await wait(1200);
+  }
+
+  // Cycle through time periods
+  const periodBtns = page.locator("[data-period-btn]");
+  const pCount = await periodBtns.count();
+  for (let i = 0; i < pCount; i++) {
+    await periodBtns.nth(i).click();
+    await wait(900);
+  }
+
+  await wait(1000);
+});
+
 // ── Overview demo ─────────────────────────────────────────────────────────────
 await capture("overview", async (page) => {
   console.log("📸  Recording: Overview page…");
