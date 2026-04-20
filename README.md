@@ -13,6 +13,9 @@ An AI-powered finance and economics dashboard. Ask questions about markets and e
 ### Economics Explorer
 ![Economics page](docs/demo-economics.gif)
 
+### AI Chat
+![AI chat demo](docs/demo-chat.gif)
+
 ---
 
 ## What it does
