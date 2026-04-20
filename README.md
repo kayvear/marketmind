@@ -205,21 +205,3 @@ marketmind/
     └── pyproject.toml
 ```
 
-## Roadmap
-
-- [x] MCP server with live market data (yfinance)
-- [x] Claude agent wired to MCP tools
-- [x] FastAPI backend with streaming SSE chat
-- [x] Next.js frontend with charts and dark/light theme
-- [x] Chat settings — model, verbosity, theme
-- [x] Conversation memory
-- [x] FRED economic data tools (MCP layer)
-- [x] Backend economics endpoints
-- [x] Navigation restructure (Overview / Markets / Economics)
-- [x] Economics page (indicator cards + FRED search/browse + line chart)
-- [x] Overview landing page (AI briefing, board, movers)
-- [x] App icon + SVG favicon
-- [x] Chat rail drag-to-resize + pop-out modal
-- [ ] Loading skeletons + error boundaries
-- [ ] Symbol search / watchlist
-- [ ] Mobile-responsive layout
